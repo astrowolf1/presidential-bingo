@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Bingo</title>
+    <style>
+        @font-face { font-family: ComicSans; src: url('COMIC.TTF'); } 
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            width: 100vw;
+            background-color: #f0f0f0;
+            margin: 0;
+            font-family: ComicSans, sans-serif;
+            overflow-x: hidden;
+            overflow-y: hidden;
+        }
+        h1 {
+            font-size: min(7vw, 4em);
+            text-wrap: nowrap;
+            margin-bottom: 1em;
+        }
+        #bingo-container {
+            align-content: center;
+            width: 100vw;
+            max-width: 35em;
+            /* transform: scale(100vw/400px); */
+            text-align: center;
+            background-image: repeating-linear-gradient(45deg,
+                red,
+                red 10px,
+                white 10px,
+                white 20px,
+                blue 20px,
+                blue 30px
+            );
+            padding: 2em;
+        }
+        #bingo-card {
+            display: grid;
+            background-color: #dddb;
+            border: 1px solid #dddc;
+            grid-template-columns: repeat(6, 1fr);
+            gap: 5px;
+            padding: 1em;
+            padding-left: 0;
+            padding-top: 0.5em;
+            border-radius: 0.5em;
+        }
+        .cell {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: white;
+            border: 1px solid #ddd;
+            cursor: pointer;
+            transition: background-color 0.3s;
+            border-radius: 0.25em;
+            font-size: min(1em, 2.8vw);
+        }
+        .cell.selected {
+            background-color: #8fbc8f;
+        }
+        .header-cell {
+            display: flex;
+            flex-direction: row;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            background-color: #0000;
+            font-size: min(2.5em, 7vw);
+            font-weight: bold;
+            cursor: default;
+            border: none;
+        }
+        #new-board-btn {
+            display: block;
+            margin: 1em auto;
+            margin-bottom: 0;
+            padding: 0.5em 1em;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 0.25em;
+            cursor: pointer;
+            font-size: min(1.25em, 4vw);
+        }
+    </style>
+</head>
+<body>
+    <h1>Presidential Debate Bingo</h1>
+    <div id="bingo-container">
+        <div id="bingo-card"></div>
+        <button id="new-board-btn">Make this Card Reset Again</button>
+    </div>
+
+    <script>
+        const COL_NAMES = [' ', 'B', 'I', 'D', 'E', 'N'];
+        const ROW_NAMES = ['T', 'R', 'U', 'M', 'P'];
+
+        async function fetchTextFile(url) {
+            const response = await fetch(url);
+            return await response.text();
+        }
+
+        function shuffleArray(array) {
+            for (let i = array.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [array[i], array[j]] = [array[j], array[i]];
+            }
+        }
+
+        function saveBoardToCookies(cells) {
+            const cellsData = Array.from(cells).map(cell => ({ text: cell.innerText, selected: cell.classList.contains('selected') }));
+            document.cookie = `bingoBoard=${encodeURIComponent(JSON.stringify(cellsData))};path=/;max-age=86400`; // Expires in 1 day
+        }
+
+        function readBoardFromCookies() {
+            const cookies = document.cookie.split('; ').find(row => row.startsWith('bingoBoard='));
+            return cookies ? JSON.parse(decodeURIComponent(cookies.split('=')[1])) : null;
+        }
+
+        function updateCellSelectionInCookies() {
+            const cells = document.querySelectorAll('#bingo-card .cell');
+            saveBoardToCookies(cells);
+        }
+
+        function generateBingoCard(list1, list2, cellsData = null) {
+            const bingoCard = document.getElementById('bingo-card');
+            bingoCard.innerHTML = ''; // Clear existing board
+
+            if (!cellsData) {
+                const diagonals = [0, 6, 18, 24, 4, 8, 16, 20]; // indices of the diagonal cells excluding the center
+                const nonDiagonals = Array.from({ length: 25 }, (_, i) => i).filter(i => !diagonals.includes(i) && i !== 12);
+
+                shuffleArray(list1);
+                shuffleArray(list2);
+
+                const selectedList1 = list1.slice(0, nonDiagonals.length + diagonals.length);
+                const selectedList2 = list2.slice(0, diagonals.length);
+
+                const cells = Array(25).fill(null);
+                nonDiagonals.forEach((index, i) => cells[index] = selectedList1[i]);
+                diagonals.forEach((index, i) => cells[index] = selectedList2[i]);
+                // Adjusted diagonal assignment with a 75% chance to pick from list1
+                diagonals.forEach((index, i) => {
+                    if (Math.random() < 0.75) { // 75% chance to pick from list1
+                        // Pick from the remaining items in list1 not used for nonDiagonals
+                        cells[index] = selectedList1[nonDiagonals.length + i];
+                    } else {
+                        cells[index] = selectedList2[i];
+                    }
+                });
+                cells[12] = "Free"; // Center cell
+
+                COL_NAMES.forEach((col, i) => {
+                    const headerCell = document.createElement('div');
+                    headerCell.className = 'header-cell';
+                    headerCell.innerText = col;
+                    bingoCard.appendChild(headerCell);
+                });
+
+                cells.forEach((text, i) => {
+                    // Add a header at the beginning of each row
+                    if (i % 5 === 0) {
+                        const headerCellStart = document.createElement('div');
+                        headerCellStart.className = 'header-cell';
+                        headerCellStart.innerText = ROW_NAMES[i / 5];
+                        bingoCard.appendChild(headerCellStart);
+                    }
+
+                    const cell = document.createElement('div');
+                    cell.className = 'cell';
+                    if (text) {
+                        cell.innerText = text;
+                        cell.addEventListener('click', () => {
+                            cell.classList.toggle('selected');
+                            updateCellSelectionInCookies();
+                        });
+                    }
+                    bingoCard.appendChild(cell);
+                });
+            } else {
+                COL_NAMES.forEach((col, i) => {
+                    const headerCell = document.createElement('div');
+                    headerCell.className = 'header-cell';
+                    headerCell.innerText = col;
+                    bingoCard.appendChild(headerCell);
+                });
+
+                // Use cellsData to generate the board
+                cellsData.forEach((data, i) => {
+                    if (i % 5 === 0) {
+                        const headerCellStart = document.createElement('div');
+                        headerCellStart.className = 'header-cell';
+                        headerCellStart.innerText = ROW_NAMES[i / 5];
+                        bingoCard.appendChild(headerCellStart);
+                    }
+                    
+                    const cell = document.createElement('div');
+                    cell.className = 'cell';
+                    if (data.text) {
+                        cell.innerText = data.text;
+                        if (data.selected) {
+                            cell.classList.add('selected');
+                        }
+                        cell.addEventListener('click', () => {
+                            cell.classList.toggle('selected');
+                            updateCellSelectionInCookies();
+                        });
+                    }
+                    bingoCard.appendChild(cell);
+                });
+            }
+        }
+
+        async function init() {
+            const list1Text = await fetchTextFile('list1.txt');
+            const list2Text = await fetchTextFile('list2.txt');
+            const list1 = list1Text.trim().split('\n').filter(line => line.trim() !== '');
+            const list2 = list2Text.trim().split('\n').filter(line => line.trim() !== '');
+
+            const cellsData = readBoardFromCookies();
+
+            if (cellsData) {
+                generateBingoCard(null, null, cellsData);
+            } else {
+
+                generateBingoCard(list1, list2);
+            }
+
+            document.getElementById('new-board-btn').addEventListener('click', async () => {
+                generateBingoCard(list1, list2);
+
+                const cells = document.querySelectorAll('#bingo-card .cell');
+                saveBoardToCookies(cells);
+            });
+        }
+
+        document.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>
